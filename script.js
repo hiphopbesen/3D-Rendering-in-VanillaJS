@@ -324,7 +324,7 @@ class Camera {
 
         this.near = 0.1;
         this.far =1000;
-        this.fov = 60;
+        this.fov = 90;
         this.aspectRatio = canvas.width / canvas.height;
         this.fovRad = 1 / Math.tan(this.fov * 0.5 / 180 * Math.PI);
         this.projectionMatrix = MatrixMakeProjection(this.fov, this.aspectRatio, this.near, this.far);
@@ -417,10 +417,11 @@ class World3D {
     }
     transformPoint3DTo2D(point3D) {
         let point2D = multiplyMatrixVector(this.camera.projectionMatrix, point3D);
-        point2D.x += 1;
-        point2D.y += 1;
-        point2D.x *= 0.5 * canvas.width 
-        point2D.y *= 0.5 * canvas.height 
+        point2D.x = (point2D.x + 1) / 2;
+        point2D.y = (point2D.y + 1) / 2;
+        // Scale to canvas size
+        point2D.x *= canvas.width;
+        point2D.y *= canvas.height;
         return point2D;
     }
     finalDraw(trianglesToDraw){
