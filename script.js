@@ -85,7 +85,7 @@ function drawTriangle(triangle, dp) {
     ctx.lineTo(point1.x, point1.y);
     ctx.fill();
     ctx.strokeStyle = ctx.fillStyle
-    // ctx.strokeStyle = 'rgb(255,255,255)'
+    ctx.strokeStyle = 'rgb(255,255,255)'
     ctx.stroke();
 }
 
@@ -316,6 +316,35 @@ function multiplyMatrixVector(matrix, vector) {
 }
 
 
+function drawline(point1, point2){
+    ctx.strokeStyle = 'rgb(255,0,0)'
+    console.log(point1, point2)
+    ctx.moveTo(point1.x, point1.y)
+    ctx.lineTo(point2.x, point2.y)
+    ctx.stroke()
+}
+
+function lineTriangleIntersection(lineStart, lineEnd, triangle) {
+    var pq = Vec3sub(lineEnd, lineStart);
+    var pa = Vec3sub(triangle.point1, lineStart);
+    var pb = Vec3sub(triangle.point2, lineStart);
+    var pc = Vec3sub(triangle.point3, lineStart);
+
+    var u = pq.y * pc.z - pq.z * pc.y;
+    var v = pq.z * pc.x - pq.x * pc.z;
+    var w = pq.x * pc.y - pq.y * pc.x;
+
+    var denom = 1 / (u * pb.x + v * pb.y + w * pb.z);
+
+    var au = (u * pa.x + v * pa.y + w * pa.z) * denom;
+    if (au < 0) return false;
+
+    var bu = (u * pb.x + v * pb.y + w * pb.z) * denom;
+    if (bu < 0 || bu > 1 - au) return false;
+
+    return true;
+}
+
 class Camera {
     constructor() {
         this.position = new Vec3(10, 20, 0);
@@ -331,6 +360,11 @@ class Camera {
 
         let vUp = new Vec3(0, -1, 0);
         let Target = new Vec3(0, 0, 1);
+
+        //player
+        this.playerheight = 2
+        //falling
+        this.lastgroundcontact = 0 //letzter bodenkontakt
         
         let camrot = MatrixMakeIdentity();
         let rotY = MatrixMakeRotationY(this.yaw);
@@ -359,6 +393,14 @@ class Camera {
         this.vForward = Vec3sub(this.vTarget, this.position);
         this.matView = Matrix_QuickInverse(matCamera);
     }
+    gravity(gametick){
+        let time = this.lastgroundcontact - gametick
+        //angenommen gametick ist sekunden, 
+        let fallingspeed = (9.81 * time)/1000
+        fallingspeed = 0
+        this.position.y = this.position.y + fallingspeed
+        this.updateViewMatrix()
+    }
 }
 
 class World3D {
@@ -367,16 +409,17 @@ class World3D {
         this.timeElapsed = 0
 
         // hide cursor over canvas
-        canvas.addEventListener("mouseenter", (e) => {
-            canvas.style.cursor = "none";
-        });
-        canvas.addEventListener("mouseleave", (e) => {
-            canvas.style.cursor = "default";
-        });
+        // canvas.addEventListener("mouseenter", (e) => {
+        //     canvas.style.cursor = "none";
+        // });
+        // canvas.addEventListener("mouseleave", (e) => {
+        //     canvas.style.cursor = "default";
+        // });
 
         // event listeners
         // mouse
-        document.addEventListener("mousemove", (e) => {
+        //only apply once clicked on canvas
+        const mouselisteners =  (e) => {
             const sensitivity = 0.05;
             // Adjust yaw and pitch with sensitivity and delta time
             this.camera.yaw += e.movementX * sensitivity;
@@ -386,7 +429,16 @@ class World3D {
             if (this.camera.pitch > 1.5) this.camera.pitch = 1.5;
             if (this.camera.pitch < -1.5) this.camera.pitch = -1.5;
             this.camera.updateViewMatrix();
+        };
+        canvas.addEventListener("mousedown", (e) => {
+            document.addEventListener("mousemove" , mouselisteners)
         });
+        canvas.addEventListener("mouseup", (e) => {
+            document.removeEventListener("mousemove", mouselisteners);
+        })
+
+
+        
         document.addEventListener("keydown", (e) => {
             let movementvector = new Vec3(0, 0, 0);
             if(e.key == "a"){
@@ -427,7 +479,7 @@ class World3D {
     finalDraw(trianglesToDraw){
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         //draw black background
-        ctx.fillStyle = "black";
+        ctx.fillStyle = "#00BFFF";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.stroke();
         //sort triangles to draw (Painters algorithm)
@@ -436,7 +488,8 @@ class World3D {
             let z2 = (b.triangleProj.point1.z + b.triangleProj.point2.z + b.triangleProj.point3.z) / 3;
             return z2 - z1;
         });
-        
+
+
         let que = [...trianglesToDraw];
         //foreach plane
         for (let j = 0; j < 4; j++) {
@@ -471,6 +524,7 @@ class World3D {
     draw() {
         requestAnimationFrame(this.draw.bind(this));
 
+        this.camera.gravity(this.timeElapsed)
         let trianglesToDraw = [];
         for (let i = 0; i < Cube.triangles.length; i++) {
             let timeloop = performance.now() / 1000 / 6 * 2 * Math.PI;
@@ -488,9 +542,11 @@ class World3D {
             let matRotX = MatrixMakeRotationX(timeloop);
 
             //create rotation matrix
-            let matTrans = MatrixMakeTranslation(0, 0, 16);
+            //set trinagles back
+            let matTrans = MatrixMakeTranslation(0, 0, 20);
 
             let matWorld = matTrans;
+            //rotation
             matWorld = MatricesMultiplication(matRotZ, matRotX);
             matWorld = MatricesMultiplication(matWorld, matTrans);
 
@@ -516,16 +572,15 @@ class World3D {
 
 
             let cameraRay = Vec3sub(triTranslated.point1, this.camera.position);
-            
             if (Vec3dot(normal, cameraRay) < 0) {
-                let light_direction = new Vec3(0, 0, -1);
-
+                //initial light direction
+                let light_direction = new Vec3(0, 1, -1);
 
                 //rotate light direction
-                // let lightrotz = MatrixMakeRotationX(performance.now() / 4000 / 6 * 2 * Math.PI);
-                // let lightrotx = MatrixMakeRotationZ(performance.now() / 4000 / 6 * 2 * Math.PI);
-                // light_direction = MatrixMultiplyVector(lightrotz, light_direction);
-                // light_direction = MatrixMultiplyVector(lightrotx, light_direction);
+                let lightrotz = MatrixMakeRotationX(performance.now() / 4000 / 6 * 2 * Math.PI);
+                let lightrotx = MatrixMakeRotationZ(performance.now() / 4000 / 6 * 2 * Math.PI);
+                light_direction = MatrixMultiplyVector(lightrotz, light_direction);
+                light_direction = MatrixMultiplyVector(lightrotx, light_direction);
 
                 light_direction = Vec3normalize(light_direction);
                 let dp = normal.x * light_direction.x + normal.y * light_direction.y + normal.z * light_direction.z;
@@ -543,6 +598,7 @@ class World3D {
                     triangle.point1 = this.transformPoint3DTo2D(triangle.point1);
                     triangle.point2 = this.transformPoint3DTo2D(triangle.point2);
                     triangle.point3 = this.transformPoint3DTo2D(triangle.point3);
+
                     //add all trinangles to array
                     trianglesToDraw.push({triangleProj: triangle, dp: dp});
                 });
